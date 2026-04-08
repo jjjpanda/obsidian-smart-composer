@@ -100,9 +100,12 @@ export class PromptGenerator {
         ? await this.getCurrentFileMessage(currentFile)
         : undefined
 
+    const contextFilesMessages = await this.getContextFilesMessages()
+
     const requestMessages: RequestMessage[] = [
       systemMessage,
       ...(customInstructionMessage ? [customInstructionMessage] : []),
+      ...contextFilesMessages,
       ...(currentFileMessage ? [currentFileMessage] : []),
       ...this.getChatHistoryMessages({ messages: compiledMessages }),
       ...(shouldUseRAG && this.getModelPromptLevel() == PromptLevel.Default
@@ -498,6 +501,21 @@ ${
 ${customInstruction}
 </custom_instructions>`,
     }
+  }
+
+  private async getContextFilesMessages(): Promise<RequestMessage[]> {
+    const paths = this.settings.chatOptions.contextFiles ?? []
+    const messages: RequestMessage[] = []
+    for (const path of paths) {
+      const file = this.app.vault.getAbstractFileByPath(path)
+      if (!(file instanceof TFile)) continue
+      const content = await readTFileContent(file, this.app.vault)
+      messages.push({
+        role: 'user',
+        content: `Here is the content of ${path} for additional context:\n<context_file filename="${path}">\n${content}\n</context_file>`,
+      })
+    }
+    return messages
   }
 
   private async getCurrentFileMessage(
