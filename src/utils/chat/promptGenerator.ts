@@ -88,7 +88,7 @@ export class PromptGenerator {
     }
     const shouldUseRAG = lastUserMessage.similaritySearchResults !== undefined
 
-    const systemMessage = this.getSystemMessage(shouldUseRAG)
+    const systemMessage = await this.getSystemMessage(shouldUseRAG)
 
     const customInstructionMessage = this.getCustomInstructionMessage()
 
@@ -100,12 +100,9 @@ export class PromptGenerator {
         ? await this.getCurrentFileMessage(currentFile)
         : undefined
 
-    const contextFilesMessages = await this.getContextFilesMessages()
-
     const requestMessages: RequestMessage[] = [
       systemMessage,
       ...(customInstructionMessage ? [customInstructionMessage] : []),
-      ...contextFilesMessages,
       ...(currentFileMessage ? [currentFileMessage] : []),
       ...this.getChatHistoryMessages({ messages: compiledMessages }),
       ...(shouldUseRAG && this.getModelPromptLevel() == PromptLevel.Default
@@ -414,8 +411,9 @@ ${await this.getWebsiteContent(url)}
     }
   }
 
-  private getSystemMessage(shouldUseRAG: boolean): RequestMessage {
+  private async getSystemMessage(shouldUseRAG: boolean): Promise<RequestMessage> {
     const modelPromptLevel = this.getModelPromptLevel()
+    const contextFilesSection = await this.getContextFilesSection()
     const systemPrompt = `You are an intelligent assistant to help answer any questions that the user has${modelPromptLevel == PromptLevel.Default ? `, particularly about editing and organizing markdown files in Obsidian` : ''}.
 
 1. Please keep your response as concise as possible. Avoid being verbose.
@@ -453,10 +451,10 @@ The user has full access to the file, so they prefer seeing only the changes in 
 `
     : ''
 }
-Today's date and time is ${new Date().toLocaleString()} (${Intl.DateTimeFormat().resolvedOptions().timeZone}).`
+Today's date and time is ${new Date().toLocaleString()} (${Intl.DateTimeFormat().resolvedOptions().timeZone}).${contextFilesSection}`
 
     const systemPromptRAG = `You are an intelligent assistant to help answer any questions that the user has${modelPromptLevel == PromptLevel.Default ? `, particularly about editing and organizing markdown files in Obsidian` : ''}. You will be given your conversation history with them and potentially relevant blocks of markdown content from the current vault.
-      
+
 1. Do not lie or make up facts.
 
 2. Format your response in markdown.
@@ -483,12 +481,24 @@ ${
   <smtcmp_block filename="path/to/file.md" language="markdown" startLine="2" endLine="30"></smtcmp_block>`
     : ''
 }
-Today's date and time is ${new Date().toLocaleString()} (${Intl.DateTimeFormat().resolvedOptions().timeZone}).`
+Today's date and time is ${new Date().toLocaleString()} (${Intl.DateTimeFormat().resolvedOptions().timeZone}).${contextFilesSection}`
 
     return {
       role: 'system',
       content: shouldUseRAG ? systemPromptRAG : systemPrompt,
     }
+  }
+
+  private async getContextFilesSection(): Promise<string> {
+    const paths = this.settings.chatOptions.contextFiles ?? []
+    const parts: string[] = []
+    for (const path of paths) {
+      const file = this.app.vault.getAbstractFileByPath(path)
+      if (!(file instanceof TFile)) continue
+      const content = await readTFileContent(file, this.app.vault)
+      parts.push(`<context_file filename="${path}">\n${content}\n</context_file>`)
+    }
+    return parts.length > 0 ? `\n\n${parts.join('\n\n')}` : ''
   }
 
   private getCustomInstructionMessage(): RequestMessage | null {
@@ -505,20 +515,6 @@ ${customInstruction}
     }
   }
 
-  private async getContextFilesMessages(): Promise<RequestMessage[]> {
-    const paths = this.settings.chatOptions.contextFiles ?? []
-    const messages: RequestMessage[] = []
-    for (const path of paths) {
-      const file = this.app.vault.getAbstractFileByPath(path)
-      if (!(file instanceof TFile)) continue
-      const content = await readTFileContent(file, this.app.vault)
-      messages.push({
-        role: 'user',
-        content: `Here is the content of ${path} for additional context:\n<context_file filename="${path}">\n${content}\n</context_file>`,
-      })
-    }
-    return messages
-  }
 
   private async getCurrentFileMessage(
     currentFile: TFile,

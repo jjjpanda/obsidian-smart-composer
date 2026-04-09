@@ -106,9 +106,16 @@ export class ResponseGenerator {
           .map(async (toolCall) => {
             let parsedArgs: Record<string, unknown> | null = null
             try {
-              parsedArgs = toolCall.request.arguments
+              const parsed = toolCall.request.arguments
                 ? JSON.parse(toolCall.request.arguments)
                 : {}
+              if (
+                typeof parsed === 'object' &&
+                parsed !== null &&
+                !Array.isArray(parsed)
+              ) {
+                parsedArgs = parsed as Record<string, unknown>
+              }
             } catch (e) {
               // handled below
             }
@@ -126,6 +133,7 @@ export class ResponseGenerator {
                       id: toolCall.request.id,
                       signal: this.abortSignal,
                     })
+            if (this.abortSignal?.aborted) return
             this.updateResponseMessages((messages) =>
               messages.map((message) =>
                 message.id === toolMessage.id && message.role === 'tool'

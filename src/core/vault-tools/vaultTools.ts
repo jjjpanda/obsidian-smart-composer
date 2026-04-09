@@ -86,7 +86,7 @@ export class VaultTools {
         function: {
           name: 'vault_search_content',
           description:
-            'Search vault files by content using semantic search (RAG). Falls back to filename search if RAG is unavailable.',
+            'Search vault files by content using semantic search (RAG).',
           parameters: {
             type: 'object' as const,
             properties: {
