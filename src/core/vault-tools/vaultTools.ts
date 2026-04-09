@@ -185,8 +185,9 @@ export class VaultTools {
     try {
       const ragEngine = await this.getRagEngine()
       const results = await ragEngine.processQuery({ query })
-      const mapped = results.map(({ path, similarity, metadata }) => ({
+      const mapped = results.map(({ path, content, similarity, metadata }) => ({
         path,
+        content,
         similarity,
         startLine: metadata?.startLine,
         endLine: metadata?.endLine,

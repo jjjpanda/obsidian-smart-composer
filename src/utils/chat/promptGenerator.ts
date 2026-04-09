@@ -494,7 +494,10 @@ Today's date and time is ${new Date().toLocaleString()} (${Intl.DateTimeFormat()
     const parts: string[] = []
     for (const path of paths) {
       const file = this.app.vault.getAbstractFileByPath(path)
-      if (!(file instanceof TFile)) continue
+      if (!(file instanceof TFile)) {
+        console.warn(`[smart-composer] Context file not found or is not a file: ${path}`)
+        continue
+      }
       const content = await readTFileContent(file, this.app.vault)
       parts.push(`<context_file filename="${path}">\n${content}\n</context_file>`)
     }

@@ -112,7 +112,7 @@ describe('VaultTools', () => {
   describe('vault_search_content', () => {
     it('returns RAG results when available', async () => {
       const ragResults = [
-        { path: 'notes/a.md', similarity: 0.9, metadata: { startLine: 1, endLine: 5 } },
+        { path: 'notes/a.md', content: 'matched chunk text', similarity: 0.9, metadata: { startLine: 1, endLine: 5 } },
       ]
       const getRagEngine = jest.fn().mockResolvedValue({
         processQuery: jest.fn().mockResolvedValue(ragResults),
@@ -122,6 +122,7 @@ describe('VaultTools', () => {
       expect(result.status).toBe(ToolCallResponseStatus.Success)
       if (result.status === ToolCallResponseStatus.Success) {
         expect(result.data.text).toContain('notes/a.md')
+        expect(result.data.text).toContain('matched chunk text')
       }
     })
 
