@@ -522,7 +522,6 @@ ${customInstruction}
     }
   }
 
-
   private async getCurrentFileMessage(
     currentFile: TFile,
   ): Promise<RequestMessage> {

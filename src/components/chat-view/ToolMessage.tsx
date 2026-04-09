@@ -2,10 +2,13 @@ import clsx from 'clsx'
 import { Check, ChevronDown, ChevronRight, Loader2, X } from 'lucide-react'
 import { memo, useCallback, useMemo, useState } from 'react'
 
+import { useApp } from '../../contexts/app-context'
 import { useMcp } from '../../contexts/mcp-context'
+import { useRAG } from '../../contexts/rag-context'
 import { useSettings } from '../../contexts/settings-context'
 import { InvalidToolNameException } from '../../core/mcp/exception'
 import { parseToolName } from '../../core/mcp/tool-name-utils'
+import { VaultTools } from '../../core/vault-tools/vaultTools'
 import { ChatToolMessage } from '../../types/chat'
 import {
   ToolCallRequest,
@@ -229,19 +232,44 @@ function useToolCall(
 ) {
   const { settings, setSettings } = useSettings()
   const { getMcpManager } = useMcp()
+  const app = useApp()
+  const { getRAGEngine } = useRAG()
+  const vaultTools = useMemo(
+    () => new VaultTools(app, getRAGEngine),
+    [app, getRAGEngine],
+  )
+  const isVaultTool = useMemo(
+    () => vaultTools.isNativeTool(request.name),
+    [vaultTools, request.name],
+  )
 
   const handleToolCall = useCallback(async () => {
-    const mcpManager = await getMcpManager()
     onResponseUpdate({
       status: ToolCallResponseStatus.Running,
     })
-    const toolCallResponse: ToolCallResponse = await mcpManager.callTool({
-      name: request.name,
-      args: request.arguments,
-      id: request.id,
-    })
+    let toolCallResponse: ToolCallResponse
+    if (isVaultTool) {
+      let parsedArgs: Record<string, unknown> = {}
+      try {
+        if (request.arguments) parsedArgs = JSON.parse(request.arguments)
+      } catch {
+        onResponseUpdate({
+          status: ToolCallResponseStatus.Error,
+          error: `Invalid tool arguments: ${request.arguments}`,
+        })
+        return
+      }
+      toolCallResponse = await vaultTools.callTool(request.name, parsedArgs)
+    } else {
+      const mcpManager = await getMcpManager()
+      toolCallResponse = await mcpManager.callTool({
+        name: request.name,
+        args: request.arguments,
+        id: request.id,
+      })
+    }
     onResponseUpdate(toolCallResponse)
-  }, [request, onResponseUpdate, getMcpManager])
+  }, [request, onResponseUpdate, getMcpManager, isVaultTool, vaultTools])
 
   const handleAllowForConversation = useCallback(async () => {
     const mcpManager = await getMcpManager()
@@ -249,6 +277,7 @@ function useToolCall(
   }, [request, conversationId, getMcpManager])
 
   const handleAllowAutoExecution = useCallback(async () => {
+    if (isVaultTool) return
     const { serverName, toolName } = parseToolName(request.name)
     const server = settings.mcp.servers.find((s) => s.id === serverName)
     if (!server) {
@@ -256,7 +285,6 @@ function useToolCall(
     }
     const toolOptions = { ...server.toolOptions }
     if (!toolOptions[toolName]) {
-      // If the tool is not in the toolOptions, add it with default values
       toolOptions[toolName] = {
         allowAutoExecution: false,
         disabled: false,
@@ -281,7 +309,7 @@ function useToolCall(
         ),
       },
     })
-  }, [request, settings, setSettings])
+  }, [request, settings, setSettings, isVaultTool])
 
   const handleReject = useCallback(async () => {
     onResponseUpdate({

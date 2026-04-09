@@ -197,12 +197,10 @@ export class ResponseGenerator {
       },
     }))
 
-    const allTools = this.enableTools
-      ? [
-          ...(this.enableVaultTools ? this.vaultTools.listTools() : []),
-          ...mcpToolDefs,
-        ]
-      : []
+    const allTools = [
+      ...(this.enableVaultTools ? this.vaultTools.listTools() : []),
+      ...mcpToolDefs,
+    ]
 
     // Set tools to undefined when no tools are available since some providers
     // reject empty tools arrays.
