@@ -493,6 +493,7 @@ Today's date and time is ${new Date().toLocaleString()} (${Intl.DateTimeFormat()
     const paths = this.settings.chatOptions.contextFiles ?? []
     const parts: string[] = []
     const maxTotalChars = 20000
+    const maxCharsPerFile = 8000
     let totalChars = 0
     for (const path of paths) {
       if (totalChars >= maxTotalChars) break
@@ -501,11 +502,16 @@ Today's date and time is ${new Date().toLocaleString()} (${Intl.DateTimeFormat()
         console.warn(`[smart-composer] Context file not found or is not a file: ${path}`)
         continue
       }
+      const remaining = maxTotalChars - totalChars
+      const budgetForFile = Math.min(maxCharsPerFile, remaining)
+      if (file.stat.size > budgetForFile * 3) {
+        console.warn(`[smart-composer] Context file too large for prompt budget, skipping: ${path}`)
+        continue
+      }
       try {
         const content = await readTFileContent(file, this.app.vault)
-        const remaining = maxTotalChars - totalChars
-        const truncated = content.length > remaining
-        const capped = truncated ? content.slice(0, remaining) : content
+        const truncated = content.length > budgetForFile
+        const capped = truncated ? content.slice(0, budgetForFile) : content
         totalChars += capped.length
         parts.push(
           `<context_file filename="${path}">\n${capped}${truncated ? '\n[truncated]' : ''}\n</context_file>`,
