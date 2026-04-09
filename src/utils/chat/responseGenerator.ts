@@ -27,6 +27,7 @@ export type ResponseGeneratorParams = {
   messages: ChatMessage[]
   conversationId: string
   enableTools: boolean
+  enableVaultTools: boolean
   maxAutoIterations: number
   promptGenerator: PromptGenerator
   mcpManager: McpManager
@@ -39,6 +40,7 @@ export class ResponseGenerator {
   private readonly model: ChatModel
   private readonly conversationId: string
   private readonly enableTools: boolean
+  private readonly enableVaultTools: boolean
   private readonly promptGenerator: PromptGenerator
   private readonly mcpManager: McpManager
   private readonly vaultTools: VaultTools
@@ -54,6 +56,7 @@ export class ResponseGenerator {
     this.model = params.model
     this.conversationId = params.conversationId
     this.enableTools = params.enableTools
+    this.enableVaultTools = params.enableVaultTools
     this.maxAutoIterations = Math.max(1, params.maxAutoIterations) // Ensure maxAutoIterations is at least 1
     this.receivedMessages = params.messages
     this.promptGenerator = params.promptGenerator
@@ -84,7 +87,6 @@ export class ResponseGenerator {
           request: toolCall,
           response: {
             status:
-              this.vaultTools.isNativeTool(toolCall.name) ||
               this.mcpManager.isToolExecutionAllowed({
                 requestToolName: toolCall.name,
                 conversationId: this.conversationId,
@@ -196,7 +198,10 @@ export class ResponseGenerator {
     }))
 
     const allTools = this.enableTools
-      ? [...this.vaultTools.listTools(), ...mcpToolDefs]
+      ? [
+          ...(this.enableVaultTools ? this.vaultTools.listTools() : []),
+          ...mcpToolDefs,
+        ]
       : []
 
     // Set tools to undefined when no tools are available since some providers

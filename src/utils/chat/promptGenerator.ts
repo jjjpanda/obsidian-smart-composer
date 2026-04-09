@@ -498,8 +498,12 @@ Today's date and time is ${new Date().toLocaleString()} (${Intl.DateTimeFormat()
         console.warn(`[smart-composer] Context file not found or is not a file: ${path}`)
         continue
       }
-      const content = await readTFileContent(file, this.app.vault)
-      parts.push(`<context_file filename="${path}">\n${content}\n</context_file>`)
+      try {
+        const content = await readTFileContent(file, this.app.vault)
+        parts.push(`<context_file filename="${path}">\n${content}\n</context_file>`)
+      } catch (err) {
+        console.warn(`[smart-composer] Failed to read context file: ${path}`, err)
+      }
     }
     return parts.length > 0 ? `\n\n${parts.join('\n\n')}` : ''
   }

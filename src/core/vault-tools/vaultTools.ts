@@ -112,6 +112,8 @@ export class VaultTools {
           return await this.readFile(path)
         }
         case 'vault_list_directory': {
+          if (args.path !== undefined && typeof args.path !== 'string')
+            return { status: ToolCallResponseStatus.Error, error: 'path must be a string' }
           const path = typeof args.path === 'string' ? args.path.trim() : undefined
           return await this.listDirectory(path)
         }
@@ -149,7 +151,12 @@ export class VaultTools {
         error: `File not found: ${path}`,
       }
     }
-    const content = await readTFileContent(file, this.app.vault)
+    const MAX_CHARS = 50_000
+    const raw = await readTFileContent(file, this.app.vault)
+    const content =
+      raw.length > MAX_CHARS
+        ? raw.slice(0, MAX_CHARS) + `\n... (truncated, ${raw.length - MAX_CHARS} chars omitted)`
+        : raw
     return {
       status: ToolCallResponseStatus.Success,
       data: { type: 'text', text: content },
@@ -167,24 +174,24 @@ export class VaultTools {
         error: `Not a directory: ${path}`,
       }
     }
-    const entries = folder.children.map((child) => ({
+    const MAX_ENTRIES = 200
+    const all = folder.children
+    const entries = all.slice(0, MAX_ENTRIES).map((child) => ({
       name: child.name,
       type: child instanceof TFolder ? 'folder' : 'file',
       path: child.path,
     }))
+    const truncatedNote =
+      all.length > MAX_ENTRIES
+        ? `\n... (${all.length - MAX_ENTRIES} more entries truncated)`
+        : ''
     return {
       status: ToolCallResponseStatus.Success,
-      data: { type: 'text', text: JSON.stringify(entries) },
+      data: { type: 'text', text: JSON.stringify(entries) + truncatedNote },
     }
   }
 
   private searchFiles(query: string): ToolCallResponse {
-    if (!query) {
-      return {
-        status: ToolCallResponseStatus.Error,
-        error: 'query must not be empty',
-      }
-    }
     const MAX_RESULTS = 50
     const needle = query.toLowerCase()
     const all = this.app.vault

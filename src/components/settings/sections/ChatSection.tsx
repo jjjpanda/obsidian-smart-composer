@@ -142,6 +142,24 @@ export function ChatSection() {
       </ObsidianSetting>
 
       <ObsidianSetting
+        name="Enable vault tools"
+        desc="Allow the AI to read and search vault files directly. Each call requires per-call approval."
+      >
+        <ObsidianToggle
+          value={settings.chatOptions.enableVaultTools}
+          onChange={async (value) => {
+            await setSettings({
+              ...settings,
+              chatOptions: {
+                ...settings.chatOptions,
+                enableVaultTools: value,
+              },
+            })
+          }}
+        />
+      </ObsidianSetting>
+
+      <ObsidianSetting
         name="Max auto tool requests"
         desc="Maximum number of consecutive tool calls that can be made automatically without user confirmation. Higher values can significantly increase costs as each tool call consumes additional tokens."
       >
