@@ -272,9 +272,10 @@ function useToolCall(
   }, [request, onResponseUpdate, getMcpManager, isVaultTool, vaultTools])
 
   const handleAllowForConversation = useCallback(async () => {
+    if (isVaultTool) return
     const mcpManager = await getMcpManager()
     mcpManager.allowToolForConversation(request.name, conversationId)
-  }, [request, conversationId, getMcpManager])
+  }, [request, conversationId, getMcpManager, isVaultTool])
 
   const handleAllowAutoExecution = useCallback(async () => {
     if (isVaultTool) return

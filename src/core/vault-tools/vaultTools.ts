@@ -181,13 +181,11 @@ export class VaultTools {
       type: child instanceof TFolder ? 'folder' : 'file',
       path: child.path,
     }))
-    const truncatedNote =
-      all.length > MAX_ENTRIES
-        ? `\n... (${all.length - MAX_ENTRIES} more entries truncated)`
-        : ''
+    const result: { entries: typeof entries; truncated?: number } = { entries }
+    if (all.length > MAX_ENTRIES) result.truncated = all.length - MAX_ENTRIES
     return {
       status: ToolCallResponseStatus.Success,
-      data: { type: 'text', text: JSON.stringify(entries) + truncatedNote },
+      data: { type: 'text', text: JSON.stringify(result) },
     }
   }
 
