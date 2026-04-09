@@ -88,7 +88,7 @@ export class PromptGenerator {
     }
     const shouldUseRAG = lastUserMessage.similaritySearchResults !== undefined
 
-    const systemMessage = this.getSystemMessage(shouldUseRAG)
+    const systemMessage = await this.getSystemMessage(shouldUseRAG)
 
     const customInstructionMessage = this.getCustomInstructionMessage()
 
@@ -411,8 +411,9 @@ ${await this.getWebsiteContent(url)}
     }
   }
 
-  private getSystemMessage(shouldUseRAG: boolean): RequestMessage {
+  private async getSystemMessage(shouldUseRAG: boolean): Promise<RequestMessage> {
     const modelPromptLevel = this.getModelPromptLevel()
+    const contextFilesSection = await this.getContextFilesSection()
     const systemPrompt = `You are an intelligent assistant to help answer any questions that the user has${modelPromptLevel == PromptLevel.Default ? `, particularly about editing and organizing markdown files in Obsidian` : ''}.
 
 1. Please keep your response as concise as possible. Avoid being verbose.
@@ -449,10 +450,11 @@ ${
 The user has full access to the file, so they prefer seeing only the changes in the markdown. Often this will mean that the start/end of the file will be skipped, but that's okay! Rewrite the entire file only if specifically requested. Always provide a brief explanation of the updates, except when the user specifically asks for just the content.
 `
     : ''
-}`
+}
+Today's date and time is ${new Date().toLocaleString()} (${Intl.DateTimeFormat().resolvedOptions().timeZone}).${contextFilesSection}`
 
     const systemPromptRAG = `You are an intelligent assistant to help answer any questions that the user has${modelPromptLevel == PromptLevel.Default ? `, particularly about editing and organizing markdown files in Obsidian` : ''}. You will be given your conversation history with them and potentially relevant blocks of markdown content from the current vault.
-      
+
 1. Do not lie or make up facts.
 
 2. Format your response in markdown.
@@ -478,12 +480,28 @@ ${
   d. When referencing a markdown block the user gives you, only add the startLine and endLine attributes to the <smtcmp_block> tags. Write related content outside of the <smtcmp_block> tags. The content inside the <smtcmp_block> tags will be ignored and replaced with the actual content of the markdown block. For example:
   <smtcmp_block filename="path/to/file.md" language="markdown" startLine="2" endLine="30"></smtcmp_block>`
     : ''
-}`
+}
+Today's date and time is ${new Date().toLocaleString()} (${Intl.DateTimeFormat().resolvedOptions().timeZone}).${contextFilesSection}`
 
     return {
       role: 'system',
       content: shouldUseRAG ? systemPromptRAG : systemPrompt,
     }
+  }
+
+  private async getContextFilesSection(): Promise<string> {
+    const paths = this.settings.chatOptions.contextFiles ?? []
+    const parts: string[] = []
+    for (const path of paths) {
+      const file = this.app.vault.getAbstractFileByPath(path)
+      if (!(file instanceof TFile)) {
+        console.warn(`[smart-composer] Context file not found or is not a file: ${path}`)
+        continue
+      }
+      const content = await readTFileContent(file, this.app.vault)
+      parts.push(`<context_file filename="${path}">\n${content}\n</context_file>`)
+    }
+    return parts.length > 0 ? `\n\n${parts.join('\n\n')}` : ''
   }
 
   private getCustomInstructionMessage(): RequestMessage | null {
@@ -499,6 +517,7 @@ ${customInstruction}
 </custom_instructions>`,
     }
   }
+
 
   private async getCurrentFileMessage(
     currentFile: TFile,
