@@ -128,7 +128,12 @@ export class ResponseGenerator {
                     error: `Invalid tool arguments: ${toolCall.request.arguments}`,
                   } as const)
                 : this.vaultTools.isNativeTool(toolCall.request.name)
-                  ? await this.vaultTools.callTool(toolCall.request.name, parsedArgs)
+                  ? this.enableVaultTools
+                    ? await this.vaultTools.callTool(toolCall.request.name, parsedArgs)
+                    : ({
+                        status: ToolCallResponseStatus.Error,
+                        error: `Vault tools are disabled`,
+                      } as const)
                   : await this.mcpManager.callTool({
                       name: toolCall.request.name,
                       args: toolCall.request.arguments,

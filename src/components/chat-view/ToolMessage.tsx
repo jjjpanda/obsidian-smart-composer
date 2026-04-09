@@ -249,10 +249,20 @@ function useToolCall(
     })
     let toolCallResponse: ToolCallResponse
     if (isVaultTool) {
-      let parsedArgs: Record<string, unknown> = {}
+      let parsedArgs: Record<string, unknown> | null = null
       try {
-        if (request.arguments) parsedArgs = JSON.parse(request.arguments)
+        const parsed = request.arguments ? JSON.parse(request.arguments) : {}
+        if (
+          typeof parsed === 'object' &&
+          parsed !== null &&
+          !Array.isArray(parsed)
+        ) {
+          parsedArgs = parsed as Record<string, unknown>
+        }
       } catch {
+        // handled below
+      }
+      if (parsedArgs === null) {
         onResponseUpdate({
           status: ToolCallResponseStatus.Error,
           error: `Invalid tool arguments: ${request.arguments}`,

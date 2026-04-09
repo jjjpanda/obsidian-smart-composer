@@ -492,7 +492,10 @@ Today's date and time is ${new Date().toLocaleString()} (${Intl.DateTimeFormat()
   private async getContextFilesSection(): Promise<string> {
     const paths = this.settings.chatOptions.contextFiles ?? []
     const parts: string[] = []
+    const maxTotalChars = 20000
+    let totalChars = 0
     for (const path of paths) {
+      if (totalChars >= maxTotalChars) break
       const file = this.app.vault.getAbstractFileByPath(path)
       if (!(file instanceof TFile)) {
         console.warn(`[smart-composer] Context file not found or is not a file: ${path}`)
@@ -500,7 +503,13 @@ Today's date and time is ${new Date().toLocaleString()} (${Intl.DateTimeFormat()
       }
       try {
         const content = await readTFileContent(file, this.app.vault)
-        parts.push(`<context_file filename="${path}">\n${content}\n</context_file>`)
+        const remaining = maxTotalChars - totalChars
+        const truncated = content.length > remaining
+        const capped = truncated ? content.slice(0, remaining) : content
+        totalChars += capped.length
+        parts.push(
+          `<context_file filename="${path}">\n${capped}${truncated ? '\n[truncated]' : ''}\n</context_file>`,
+        )
       } catch (err) {
         console.warn(`[smart-composer] Failed to read context file: ${path}`, err)
       }
