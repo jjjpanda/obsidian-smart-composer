@@ -102,6 +102,30 @@ describe('VaultTools', () => {
       }
     })
 
+    it('matches case-insensitively', async () => {
+      const files = [makeFile('notes/Python-guide.md', 'Python-guide.md')]
+      const app = makeApp({ getFiles: jest.fn().mockReturnValue(files) })
+      const vt = new VaultTools(app, jest.fn())
+      const result = await vt.callTool('vault_search_files', { query: 'python' })
+      expect(result.status).toBe(ToolCallResponseStatus.Success)
+      if (result.status === ToolCallResponseStatus.Success) {
+        expect(result.data.text).toContain('notes/Python-guide.md')
+      }
+    })
+
+    it('truncates results beyond 50', async () => {
+      const files = Array.from({ length: 60 }, (_, i) =>
+        makeFile(`notes/note${i}.md`, `note${i}.md`),
+      )
+      const app = makeApp({ getFiles: jest.fn().mockReturnValue(files) })
+      const vt = new VaultTools(app, jest.fn())
+      const result = await vt.callTool('vault_search_files', { query: 'note' })
+      expect(result.status).toBe(ToolCallResponseStatus.Success)
+      if (result.status === ToolCallResponseStatus.Success) {
+        expect(result.data.text).toContain('10 more results truncated')
+      }
+    })
+
     it('returns error for empty query', async () => {
       const vt = new VaultTools(makeApp(), jest.fn())
       const result = await vt.callTool('vault_search_files', { query: '' })

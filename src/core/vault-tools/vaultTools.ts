@@ -171,13 +171,23 @@ export class VaultTools {
         error: 'query must not be empty',
       }
     }
-    const matches = this.app.vault
+    const MAX_RESULTS = 50
+    const needle = query.toLowerCase()
+    const all = this.app.vault
       .getFiles()
-      .filter((f) => f.path.includes(query) || f.name.includes(query))
-      .map((f) => f.path)
+      .filter(
+        (f) =>
+          f.path.toLowerCase().includes(needle) ||
+          f.name.toLowerCase().includes(needle),
+      )
+    const matches = all.slice(0, MAX_RESULTS).map((f) => f.path)
+    const truncatedNote =
+      all.length > MAX_RESULTS
+        ? `\n... (${all.length - MAX_RESULTS} more results truncated)`
+        : ''
     return {
       status: ToolCallResponseStatus.Success,
-      data: { type: 'text', text: matches.join('\n') },
+      data: { type: 'text', text: matches.join('\n') + truncatedNote },
     }
   }
 
