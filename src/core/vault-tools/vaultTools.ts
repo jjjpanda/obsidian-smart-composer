@@ -15,13 +15,17 @@ type VaultToolName =
   | 'vault_search_files'
   | 'vault_search_content'
 
-const MAX_FILE_BYTES = 50 * 1024 * 1024
+const MAX_FILE_BYTES = 10 * 1024 * 1024
 
 const READABLE_EXTENSIONS = new Set([
-  'md', 'txt', 'json', 'csv', 'yaml', 'yml', 'toml', 'xml',
-  'html', 'htm', 'css', 'js', 'ts', 'jsx', 'tsx', 'py', 'rb',
-  'sh', 'bash', 'zsh', 'fish', 'ps1', 'bat', 'log', 'ini', 'cfg',
-  'conf', 'env', 'properties', 'sql', 'graphql', 'tex', 'rst',
+  'md', 'txt', 'json', 'yaml', 'yml',
+  'base', 'canvas',
+  'csv', 'log',
+  'html', 'htm',
+  'js', 'ts', 'py',
+  'sh', 'bash',
+  'css',
+  'sql'
 ])
 
 const VAULT_TOOL_NAMES: ReadonlySet<string> = new Set<VaultToolName>([
@@ -262,7 +266,7 @@ export class VaultTools {
     }
     const all = this.app.vault
       .getFiles()
-      .filter((f) => pattern.test(f.path) || pattern.test(f.name))
+      .filter((f) => READABLE_EXTENSIONS.has(f.extension.toLowerCase()) && (pattern.test(f.path) || pattern.test(f.name)))
     const truncated = all.length > MAX_RESULTS
     const matches = all.slice(0, MAX_RESULTS).map((f) => f.path)
     return {
@@ -284,7 +288,7 @@ export class VaultTools {
       if (glob) {
         const files = this.app.vault
           .getFiles()
-          .filter((f) => minimatch(f.path, glob, { matchBase: true }))
+          .filter((f) => READABLE_EXTENSIONS.has(f.extension.toLowerCase()) && minimatch(f.path, glob, { matchBase: true }))
           .map((f) => f.path)
         if (files.length === 0)
           return { status: ToolCallResponseStatus.Error, error: `No files matched glob: ${glob}` }
