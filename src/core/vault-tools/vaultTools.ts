@@ -254,10 +254,8 @@ export class VaultTools {
     const MAX_RESULTS = 50
     let pattern: RegExp
     try {
-      const compiled = new RegExp(query, 'i')
-      // Reject patterns with nested quantifiers to prevent ReDoS
       if (/\([^)]*[+*][^)]*\)[+*?{]/.test(query)) throw new Error('unsafe')
-      pattern = compiled
+      pattern = new RegExp(query, 'i')
     } catch {
       const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
       pattern = new RegExp(escaped, 'i')
@@ -265,14 +263,11 @@ export class VaultTools {
     const all = this.app.vault
       .getFiles()
       .filter((f) => pattern.test(f.path) || pattern.test(f.name))
+    const truncated = all.length > MAX_RESULTS
     const matches = all.slice(0, MAX_RESULTS).map((f) => f.path)
-    const truncatedNote =
-      all.length > MAX_RESULTS
-        ? `\n... (${all.length - MAX_RESULTS} more results truncated)`
-        : ''
     return {
       status: ToolCallResponseStatus.Success,
-      data: { type: 'text', text: matches.join('\n') + truncatedNote },
+      data: { type: 'text', text: JSON.stringify({ results: matches, truncated }) },
     }
   }
 
@@ -280,6 +275,7 @@ export class VaultTools {
     if (mode === 'keyword') {
       return this.searchContentKeyword(query, glob, signal)
     }
+    const MAX_RESULTS = 50
     try {
       const ragEngine = await this.getRagEngine()
       if (signal?.aborted) return { status: ToolCallResponseStatus.Aborted }
@@ -316,9 +312,10 @@ export class VaultTools {
           endLine: metadata?.endLine,
         }
       })
+      const truncated = results.length > MAX_RESULTS
       return {
         status: ToolCallResponseStatus.Success,
-        data: { type: 'text', text: JSON.stringify(mapped) },
+        data: { type: 'text', text: JSON.stringify({ results: mapped.slice(0, MAX_RESULTS), truncated }) },
       }
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
@@ -342,14 +339,18 @@ export class VaultTools {
         return { status: ToolCallResponseStatus.Error, error: `No files matched glob: ${glob}` }
     }
     const results: { path: string; snippet: string; line: number }[] = []
+    let truncated = false
     for (const file of files) {
       if (signal?.aborted) return { status: ToolCallResponseStatus.Aborted }
-      if (results.length >= MAX_RESULTS) break
       if (!READABLE_EXTENSIONS.has(file.extension.toLowerCase())) continue
       if (file.stat.size > MAX_FILE_BYTES) continue
       const content = await readTFileContent(file, this.app.vault)
       const idx = content.toLowerCase().indexOf(lower)
       if (idx < 0) continue
+      if (results.length >= MAX_RESULTS) {
+        truncated = true
+        break
+      }
       const snippet = content.slice(
         Math.max(0, idx - SNIPPET_PAD),
         Math.min(content.length, idx + query.length + SNIPPET_PAD),
@@ -359,7 +360,7 @@ export class VaultTools {
     }
     return {
       status: ToolCallResponseStatus.Success,
-      data: { type: 'text', text: JSON.stringify(results) },
+      data: { type: 'text', text: JSON.stringify({ results, truncated }) },
     }
   }
 }

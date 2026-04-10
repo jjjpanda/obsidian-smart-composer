@@ -162,7 +162,9 @@ describe('VaultTools', () => {
       const result = await vt.callTool('vault_search_files', { query: 'note' })
       expect(result.status).toBe(ToolCallResponseStatus.Success)
       if (result.status === ToolCallResponseStatus.Success) {
-        expect(result.data.text).toContain('10 more results truncated')
+        const parsed = JSON.parse(result.data.text)
+        expect(parsed.results).toHaveLength(50)
+        expect(parsed.truncated).toBe(true)
       }
     })
 
@@ -184,12 +186,19 @@ describe('VaultTools', () => {
       expect(result.status).toBe(ToolCallResponseStatus.Error)
     })
 
-    it('falls back to literal match for ReDoS-unsafe regex', async () => {
-      const files = [makeFile('notes/(a+)+b.md', '(a+)+b.md')]
+    it.each([
+      ['a[b', 'notes/a[b.md', 'a[b.md'],
+      ['(a+)+b', 'notes/(a+)+b.md', '(a+)+b.md'],
+      ['(a+){2}', 'notes/(a+){2}.md', '(a+){2}.md'],
+    ])('falls back to literal match for %s', async (query, filePath, fileName) => {
+      const files = [makeFile(filePath, fileName)]
       const app = makeApp({ getFiles: jest.fn().mockReturnValue(files) })
       const vt = new VaultTools(app, jest.fn())
-      const result = await vt.callTool('vault_search_files', { query: '(a+)+b' })
+      const result = await vt.callTool('vault_search_files', { query })
       expect(result.status).toBe(ToolCallResponseStatus.Success)
+      if (result.status === ToolCallResponseStatus.Success) {
+        expect(result.data.text).toContain(filePath)
+      }
     })
   })
 
@@ -274,9 +283,71 @@ describe('VaultTools', () => {
       expect(result.status).toBe(ToolCallResponseStatus.Success)
       if (result.status === ToolCallResponseStatus.Success) {
         const parsed = JSON.parse(result.data.text)
-        expect(parsed).toHaveLength(1)
-        expect(parsed[0].path).toBe('recipes/cake.md')
-        expect(parsed[0].snippet).toContain('cinnamon')
+        expect(parsed.results).toHaveLength(1)
+        expect(parsed.results[0].path).toBe('recipes/cake.md')
+        expect(parsed.results[0].snippet).toContain('cinnamon')
+        expect(parsed.truncated).toBe(false)
+      }
+    })
+
+    it('semantic mode truncates results beyond 50', async () => {
+      const ragResults = Array.from({ length: 55 }, (_, i) => ({
+        path: `notes/a${i}.md`,
+        content: 'foo',
+        similarity: 0.9,
+        metadata: { startLine: 1, endLine: 1 },
+      }))
+      const getRagEngine = jest.fn().mockResolvedValue({
+        processQuery: jest.fn().mockResolvedValue(ragResults),
+      })
+      const vt = new VaultTools(makeApp(), getRagEngine)
+      const result = await vt.callTool('vault_search_content', { query: 'foo' })
+      expect(result.status).toBe(ToolCallResponseStatus.Success)
+      if (result.status === ToolCallResponseStatus.Success) {
+        const parsed = JSON.parse(result.data.text)
+        expect(parsed.results).toHaveLength(50)
+        expect(parsed.truncated).toBe(true)
+      }
+    })
+
+    it('keyword mode sets truncated: true when results exceed limit', async () => {
+      const files = Array.from({ length: 52 }, (_, i) =>
+        makeFile(`notes/note${i}.md`, `note${i}.md`),
+      )
+      const app = makeApp({
+        getFiles: jest.fn().mockReturnValue(files),
+        cachedRead: jest.fn().mockResolvedValue('match'),
+      })
+      const vt = new VaultTools(app, jest.fn())
+      const result = await vt.callTool('vault_search_content', { query: 'match', mode: 'keyword' })
+      expect(result.status).toBe(ToolCallResponseStatus.Success)
+      if (result.status === ToolCallResponseStatus.Success) {
+        const parsed = JSON.parse(result.data.text)
+        expect(parsed.results).toHaveLength(50)
+        expect(parsed.truncated).toBe(true)
+      }
+    })
+
+    it('keyword mode sets truncated: false when exactly 50 match and rest do not', async () => {
+      const matching = Array.from({ length: 50 }, (_, i) =>
+        makeFile(`notes/note${i}.md`, `note${i}.md`),
+      )
+      const nonMatching = Array.from({ length: 5 }, (_, i) =>
+        makeFile(`notes/other${i}.md`, `other${i}.md`),
+      )
+      const app = makeApp({
+        getFiles: jest.fn().mockReturnValue([...matching, ...nonMatching]),
+        cachedRead: jest.fn().mockImplementation((file: { path: string }) =>
+          Promise.resolve(file.path.includes('other') ? 'no hit' : 'match'),
+        ),
+      })
+      const vt = new VaultTools(app, jest.fn())
+      const result = await vt.callTool('vault_search_content', { query: 'match', mode: 'keyword' })
+      expect(result.status).toBe(ToolCallResponseStatus.Success)
+      if (result.status === ToolCallResponseStatus.Success) {
+        const parsed = JSON.parse(result.data.text)
+        expect(parsed.results).toHaveLength(50)
+        expect(parsed.truncated).toBe(false)
       }
     })
 
@@ -294,8 +365,8 @@ describe('VaultTools', () => {
       expect(result.status).toBe(ToolCallResponseStatus.Success)
       if (result.status === ToolCallResponseStatus.Success) {
         const parsed = JSON.parse(result.data.text)
-        expect(parsed).toHaveLength(1)
-        expect(parsed[0].path).toBe('notes/other.md')
+        expect(parsed.results).toHaveLength(1)
+        expect(parsed.results[0].path).toBe('notes/other.md')
       }
     })
 

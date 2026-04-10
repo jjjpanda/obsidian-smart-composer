@@ -249,10 +249,12 @@ function useToolCall(
     [vaultTools, request.name],
   )
   const abortControllerRef = useRef<AbortController | null>(null)
+  const toolCallSettledRef = useRef(false)
 
   const handleToolCall = useCallback(async () => {
     const controller = new AbortController()
     abortControllerRef.current = controller
+    toolCallSettledRef.current = false
     onResponseUpdate({
       status: ToolCallResponseStatus.Running,
     })
@@ -260,6 +262,7 @@ function useToolCall(
     if (isVaultTool) {
       const parsedArgs = parseToolArgs(request.arguments)
       if (parsedArgs === null) {
+        toolCallSettledRef.current = true
         onResponseUpdate({
           status: ToolCallResponseStatus.Error,
           error: `Invalid tool arguments: ${request.arguments}`,
@@ -275,8 +278,10 @@ function useToolCall(
         id: request.id,
       })
     }
-    if (controller.signal.aborted) return
-    onResponseUpdate(toolCallResponse)
+    if (!controller.signal.aborted) {
+      toolCallSettledRef.current = true
+      onResponseUpdate(toolCallResponse)
+    }
   }, [request, onResponseUpdate, getMcpManager, isVaultTool, vaultTools])
 
   const handleAllowForConversation = useCallback(async () => {
@@ -332,9 +337,11 @@ function useToolCall(
       const mcpManager = await getMcpManager()
       mcpManager.abortToolCall(request.id)
     }
-    onResponseUpdate({
-      status: ToolCallResponseStatus.Aborted,
-    })
+    if (!toolCallSettledRef.current) {
+      onResponseUpdate({
+        status: ToolCallResponseStatus.Aborted,
+      })
+    }
   }, [request, onResponseUpdate, getMcpManager, isVaultTool])
 
   return {
