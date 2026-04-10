@@ -451,7 +451,7 @@ The user has full access to the file, so they prefer seeing only the changes in 
 `
     : ''
 }
-Today's date and time is ${new Date().toLocaleString()} (${Intl.DateTimeFormat().resolvedOptions().timeZone}).${contextFilesSection}`
+Today's date and time is ${new Date().toLocaleString(undefined, { dateStyle: 'full', timeStyle: 'medium' })} (${Intl.DateTimeFormat().resolvedOptions().timeZone}).${contextFilesSection}`
 
     const systemPromptRAG = `You are an intelligent assistant to help answer any questions that the user has${modelPromptLevel == PromptLevel.Default ? `, particularly about editing and organizing markdown files in Obsidian` : ''}. You will be given your conversation history with them and potentially relevant blocks of markdown content from the current vault.
 
@@ -481,7 +481,7 @@ ${
   <smtcmp_block filename="path/to/file.md" language="markdown" startLine="2" endLine="30"></smtcmp_block>`
     : ''
 }
-Today's date and time is ${new Date().toLocaleString()} (${Intl.DateTimeFormat().resolvedOptions().timeZone}).${contextFilesSection}`
+Today's date and time is ${new Date().toLocaleString(undefined, { dateStyle: 'full', timeStyle: 'medium' })} (${Intl.DateTimeFormat().resolvedOptions().timeZone}).${contextFilesSection}`
 
     return {
       role: 'system',

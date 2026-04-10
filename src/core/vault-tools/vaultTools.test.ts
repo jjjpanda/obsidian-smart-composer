@@ -3,9 +3,10 @@ import { App, TFile, TFolder } from 'obsidian'
 import { ToolCallResponseStatus } from '../../types/tool-call.types'
 import { VaultTools } from './vaultTools'
 
-function makeFile(path: string, name: string): TFile {
+function makeFile(path: string, name: string, mtime = 0): TFile {
   const f = new (TFile as unknown as new () => TFile)()
-  Object.assign(f, { path, name })
+  const extension = name.includes('.') ? name.split('.').pop()! : ''
+  Object.assign(f, { path, name, extension, stat: { mtime, size: 0 } })
   return f
 }
 
@@ -87,6 +88,45 @@ describe('VaultTools', () => {
       const result = await vt.callTool('vault_list_directory', { path: 'notes/foo.md' })
       expect(result.status).toBe(ToolCallResponseStatus.Error)
     })
+
+    it('paginates entries and reports has_more', async () => {
+      const children = Array.from({ length: 10 }, (_, i) => makeFile(`notes/n${i}.md`, `n${i}.md`))
+      const folder = makeFolder('notes', children)
+      const app = makeApp({ getAbstractFileByPath: jest.fn().mockReturnValue(folder) })
+      const vt = new VaultTools(app, jest.fn())
+      const result = await vt.callTool('vault_list_directory', { path: 'notes', page: 0, page_size: 4 })
+      expect(result.status).toBe(ToolCallResponseStatus.Success)
+      if (result.status === ToolCallResponseStatus.Success) {
+        const parsed = JSON.parse(result.data.text)
+        expect(parsed.entries).toHaveLength(4)
+        expect(parsed.has_more).toBe(true)
+        expect(parsed.total).toBe(10)
+      }
+    })
+
+    it('returns error for out-of-range page', async () => {
+      const children = [makeFile('notes/a.md', 'a.md')]
+      const folder = makeFolder('notes', children)
+      const app = makeApp({ getAbstractFileByPath: jest.fn().mockReturnValue(folder) })
+      const vt = new VaultTools(app, jest.fn())
+      const result = await vt.callTool('vault_list_directory', { path: 'notes', page: 5, page_size: 10 })
+      expect(result.status).toBe(ToolCallResponseStatus.Error)
+    })
+
+    it('lists folders before files', async () => {
+      const sub = makeFolder('notes/sub')
+      const file = makeFile('notes/a.md', 'a.md', 1000)
+      const folder = makeFolder('notes', [file, sub])
+      const app = makeApp({ getAbstractFileByPath: jest.fn().mockReturnValue(folder) })
+      const vt = new VaultTools(app, jest.fn())
+      const result = await vt.callTool('vault_list_directory', { path: 'notes' })
+      expect(result.status).toBe(ToolCallResponseStatus.Success)
+      if (result.status === ToolCallResponseStatus.Success) {
+        const parsed = JSON.parse(result.data.text)
+        expect(parsed.entries[0].type).toBe('folder')
+        expect(parsed.entries[1].type).toBe('file')
+      }
+    })
   })
 
   describe('vault_search_files', () => {
@@ -126,10 +166,30 @@ describe('VaultTools', () => {
       }
     })
 
+    it('supports regex patterns', async () => {
+      const files = [makeFile('Daily/2024-01-01.md', '2024-01-01.md'), makeFile('notes/alpha.md', 'alpha.md')]
+      const app = makeApp({ getFiles: jest.fn().mockReturnValue(files) })
+      const vt = new VaultTools(app, jest.fn())
+      const result = await vt.callTool('vault_search_files', { query: '^Daily/.*\\.md$' })
+      expect(result.status).toBe(ToolCallResponseStatus.Success)
+      if (result.status === ToolCallResponseStatus.Success) {
+        expect(result.data.text).toContain('Daily/2024-01-01.md')
+        expect(result.data.text).not.toContain('notes/alpha.md')
+      }
+    })
+
     it('returns error for empty query', async () => {
       const vt = new VaultTools(makeApp(), jest.fn())
       const result = await vt.callTool('vault_search_files', { query: '' })
       expect(result.status).toBe(ToolCallResponseStatus.Error)
+    })
+
+    it('falls back to literal match for ReDoS-unsafe regex', async () => {
+      const files = [makeFile('notes/(a+)+b.md', '(a+)+b.md')]
+      const app = makeApp({ getFiles: jest.fn().mockReturnValue(files) })
+      const vt = new VaultTools(app, jest.fn())
+      const result = await vt.callTool('vault_search_files', { query: '(a+)+b' })
+      expect(result.status).toBe(ToolCallResponseStatus.Success)
     })
   })
 
@@ -150,6 +210,21 @@ describe('VaultTools', () => {
       }
     })
 
+    it('filters by glob when provided', async () => {
+      const files = [
+        makeFile('daily/2024-01-01.md', '2024-01-01.md'),
+        makeFile('projects/foo.md', 'foo.md'),
+      ]
+      const processQuery = jest.fn().mockResolvedValue([])
+      const getRagEngine = jest.fn().mockResolvedValue({ processQuery })
+      const app = makeApp({ getFiles: jest.fn().mockReturnValue(files) })
+      const vt = new VaultTools(app, getRagEngine)
+      await vt.callTool('vault_search_content', { query: 'test', glob: 'daily/**' })
+      expect(processQuery).toHaveBeenCalledWith(
+        expect.objectContaining({ scope: { files: ['daily/2024-01-01.md'], folders: [] } }),
+      )
+    })
+
     it('returns error when RAG fails', async () => {
       const getRagEngine = jest.fn().mockRejectedValue(new Error('no index'))
       const vt = new VaultTools(makeApp(), getRagEngine)
@@ -158,6 +233,85 @@ describe('VaultTools', () => {
       if (result.status === ToolCallResponseStatus.Error) {
         expect(result.error).toContain('no index')
       }
+    })
+
+    it('returns aborted when signal is already aborted', async () => {
+      const getRagEngine = jest.fn().mockResolvedValue({
+        processQuery: jest.fn().mockResolvedValue([]),
+      })
+      const vt = new VaultTools(makeApp(), getRagEngine)
+      const controller = new AbortController()
+      controller.abort()
+      const result = await vt.callTool('vault_search_content', { query: 'foo' }, controller.signal)
+      expect(result.status).toBe(ToolCallResponseStatus.Aborted)
+    })
+
+    it('returns aborted when signal fires during processQuery', async () => {
+      const controller = new AbortController()
+      const getRagEngine = jest.fn().mockResolvedValue({
+        processQuery: jest.fn().mockImplementation(
+          () => new Promise((resolve) => setTimeout(() => { controller.abort(); resolve([]) }, 0)),
+        ),
+      })
+      const vt = new VaultTools(makeApp(), getRagEngine)
+      const result = await vt.callTool('vault_search_content', { query: 'foo' }, controller.signal)
+      expect(result.status).toBe(ToolCallResponseStatus.Aborted)
+    })
+
+    it('keyword mode finds files containing the query', async () => {
+      const files = [
+        makeFile('recipes/cake.md', 'cake.md'),
+        makeFile('notes/other.md', 'other.md'),
+      ]
+      const app = makeApp({
+        getFiles: jest.fn().mockReturnValue(files),
+        cachedRead: jest.fn().mockImplementation((f: TFile) =>
+          Promise.resolve(f.path === 'recipes/cake.md' ? 'Add 1 tsp cinnamon to mix.' : 'No spices here.')
+        ),
+      })
+      const vt = new VaultTools(app, jest.fn())
+      const result = await vt.callTool('vault_search_content', { query: 'cinnamon', mode: 'keyword' })
+      expect(result.status).toBe(ToolCallResponseStatus.Success)
+      if (result.status === ToolCallResponseStatus.Success) {
+        const parsed = JSON.parse(result.data.text)
+        expect(parsed).toHaveLength(1)
+        expect(parsed[0].path).toBe('recipes/cake.md')
+        expect(parsed[0].snippet).toContain('cinnamon')
+      }
+    })
+
+    it('keyword mode respects glob filter', async () => {
+      const files = [
+        makeFile('recipes/cake.md', 'cake.md'),
+        makeFile('notes/other.md', 'other.md'),
+      ]
+      const app = makeApp({
+        getFiles: jest.fn().mockReturnValue(files),
+        cachedRead: jest.fn().mockResolvedValue('cinnamon is here'),
+      })
+      const vt = new VaultTools(app, jest.fn())
+      const result = await vt.callTool('vault_search_content', { query: 'cinnamon', mode: 'keyword', glob: 'notes/**' })
+      expect(result.status).toBe(ToolCallResponseStatus.Success)
+      if (result.status === ToolCallResponseStatus.Success) {
+        const parsed = JSON.parse(result.data.text)
+        expect(parsed).toHaveLength(1)
+        expect(parsed[0].path).toBe('notes/other.md')
+      }
+    })
+
+    it('returns error when glob matches no files (semantic)', async () => {
+      const getRagEngine = jest.fn().mockResolvedValue({ processQuery: jest.fn() })
+      const app = makeApp({ getFiles: jest.fn().mockReturnValue([]) })
+      const vt = new VaultTools(app, getRagEngine)
+      const result = await vt.callTool('vault_search_content', { query: 'foo', glob: 'nonexistent/**' })
+      expect(result.status).toBe(ToolCallResponseStatus.Error)
+    })
+
+    it('returns error when glob matches no files (keyword)', async () => {
+      const app = makeApp({ getFiles: jest.fn().mockReturnValue([]) })
+      const vt = new VaultTools(app, jest.fn())
+      const result = await vt.callTool('vault_search_content', { query: 'foo', mode: 'keyword', glob: 'nonexistent/**' })
+      expect(result.status).toBe(ToolCallResponseStatus.Error)
     })
   })
 

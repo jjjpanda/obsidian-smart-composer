@@ -18,6 +18,8 @@ import {
 
 import { VaultTools } from '../../core/vault-tools/vaultTools'
 
+import { parseToolArgs } from '../tool-args'
+
 import { fetchAnnotationTitles } from './fetch-annotation-titles'
 import { PromptGenerator } from './promptGenerator'
 
@@ -106,21 +108,7 @@ export class ResponseGenerator {
               toolCall.response.status === ToolCallResponseStatus.Running,
           )
           .map(async (toolCall) => {
-            let parsedArgs: Record<string, unknown> | null = null
-            try {
-              const parsed = toolCall.request.arguments
-                ? JSON.parse(toolCall.request.arguments)
-                : {}
-              if (
-                typeof parsed === 'object' &&
-                parsed !== null &&
-                !Array.isArray(parsed)
-              ) {
-                parsedArgs = parsed as Record<string, unknown>
-              }
-            } catch (e) {
-              // handled below
-            }
+            const parsedArgs = parseToolArgs(toolCall.request.arguments)
             const response =
               parsedArgs === null
                 ? ({
@@ -129,7 +117,7 @@ export class ResponseGenerator {
                   } as const)
                 : this.vaultTools.isNativeTool(toolCall.request.name)
                   ? this.enableVaultTools
-                    ? await this.vaultTools.callTool(toolCall.request.name, parsedArgs)
+                    ? await this.vaultTools.callTool(toolCall.request.name, parsedArgs, this.abortSignal)
                     : ({
                         status: ToolCallResponseStatus.Error,
                         error: `Vault tools are disabled`,
